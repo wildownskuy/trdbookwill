@@ -1,0 +1,14 @@
+# Requirements — Live Testing Sistem Prediksi Trading BEI
+# =========================================================
+# Install dengan: pip install -r requirements.txt
+# =========================================================
+
+# Core HTTP & Retry
+requests>=2.31.0
+urllib3>=2.0.0
+
+# Database
+supabase>=2.0.0
+
+# Environment variables
+python-dotenv>=1.0.0
