@@ -35,8 +35,8 @@ export default async function handler(req, res) {
     }
 
     // 3. Konfigurasi GitHub Actions API
-    const repoOwner = process.env.GITHUB_OWNER || 'willsurvey';
-    const repoName = process.env.GITHUB_REPO || 'tradebook-live-test';
+    const repoOwner = process.env.GITHUB_OWNER || 'wildownskuy';
+    const repoName = process.env.GITHUB_REPO || 'trdbookwill';
     const githubToken = process.env.GITHUB_TOKEN;
 
     if (!githubToken) {
