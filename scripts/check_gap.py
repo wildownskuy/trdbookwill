@@ -169,7 +169,7 @@ def run_check_gap(job_date: str = None) -> dict:
                             pass
                 
                 open_s2 = None
-                s1_end_idx = detect_end_s1(times_list)
+                s1_end_idx = detect_end_s1(times_list, require_gap=True)
                 if s1_end_idx != -1 and s1_end_idx + 1 < len(times_list):
                     # Harga pertama setelah jeda istirahat adalah awal Sesi 2
                     s2_open_time = times_list[s1_end_idx + 1]

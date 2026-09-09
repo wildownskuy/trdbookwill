@@ -16,16 +16,22 @@ if sys.platform.startswith('win'):
         pass
 
 
-def detect_end_s1(times_list: list) -> int:
+def detect_end_s1(times_list: list, require_gap: bool = False) -> int:
     """Deteksi indeks akhir Sesi 1.
     
-    Iterate timestamps, cari gap > 10 menit antara candle berturut-mendatang.
-    Jadwal BEI konsisten:
-    - Sen-Kam: S1 = 09:00-11:59, S2 = 13:30-15:49
-    - Jumat: S1 = 09:00-11:29, S2 = 14:00-15:49
+    1. Iterate timestamps, cari gap > 10 menit antara candle berturut-turut (pemisah S1 dan S2).
+    2. Jika ditemukan gap > 10 menit, return indeks candle sebelum gap (akhir Sesi 1).
+    3. Jika TIDAK ditemukan gap > 10 menit:
+       - Jika require_gap == True (dipakai oleh check_gap untuk memastikan S2 sudah buka), return -1.
+       - Jika require_gap == False (dipakai saat live screening jam 12:00-13:29 WIB
+         di mana Sesi 2 belum dimulai sehingga seluruh data yang ada adalah Sesi 1):
+         return len(times_list) - 1.
     
-    Return: index of close_s1 (0-based), or -1 if not found
+    Return: index of close_s1 (0-based), or -1 if not found / empty
     """
+    if not times_list:
+        return -1
+        
     for i in range(1, len(times_list)):
         try:
             # Parse time format "HH:MM"
@@ -36,7 +42,13 @@ def detect_end_s1(times_list: list) -> int:
                 return i - 1
         except (ValueError, IndexError):
             continue
-    return -1
+            
+    if require_gap:
+        return -1
+        
+    # Saat screening jam 12:00-13:29 WIB (jeda istirahat siang), Sesi 2 belum dimulai.
+    # Seluruh data yang tersedia di times_list adalah data Sesi 1.
+    return len(times_list) - 1
 
 
 def make_5min_candles(price_map: dict, times_s1: list, lot_map: dict) -> list:
