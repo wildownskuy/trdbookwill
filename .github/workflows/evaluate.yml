@@ -28,6 +28,7 @@ jobs:
 
       - name: Run Evaluate
         env:
+          PYTHONUNBUFFERED:   "1"
           STOCKBIT_USERNAME:  ${{ secrets.STOCKBIT_USERNAME }}
           STOCKBIT_PASSWORD:  ${{ secrets.STOCKBIT_PASSWORD }}
           STOCKBIT_PLAYER_ID: ${{ secrets.STOCKBIT_PLAYER_ID }}

@@ -142,21 +142,37 @@ def run_screening(job_date: str = None) -> dict:
                     print(f"  Token refreshed")
                 
                 # b. Fetch tradebook per ticker
-                print(f"  [{i+1}/{len(universe)}] Fetching tradebook for {ticker}...", end=" ")
-                tradebook = fetch_tradebook_with_retry(session, ticker)
+                print(f"  [{i+1}/{len(universe)}] Fetching tradebook for {ticker}...", end=" ", flush=True)
+                tradebook = None
+                try:
+                    tradebook = fetch_tradebook_with_retry(session, ticker)
+                except Exception as err:
+                    print(f"ERROR fetching ({err})", flush=True)
+                    skip_count += 1
+                    result["total_skipped"] += 1
+                    result["errors"].append(f"{ticker} fetch error: {err}")
+                    continue
                 
                 if tradebook is None:
-                    print("SKIP (empty/no data)")
+                    print("SKIP (empty/no data)", flush=True)
                     skip_count += 1
                     result["total_skipped"] += 1
                     continue
                 
                 # c. Extract features dan apply rule
-                print("Extracting features...", end=" ")
-                features = extract_features(tradebook)
+                print("Extracting features...", end=" ", flush=True)
+                features = None
+                try:
+                    features = extract_features(tradebook)
+                except Exception as err:
+                    print(f"ERROR features ({err})", flush=True)
+                    skip_count += 1
+                    result["total_skipped"] += 1
+                    result["errors"].append(f"{ticker} feature error: {err}")
+                    continue
                 
                 if features is None:
-                    print("SKIP (feature extraction failed)")
+                    print("SKIP (feature extraction failed)", flush=True)
                     skip_count += 1
                     result["total_skipped"] += 1
                     continue

@@ -111,14 +111,18 @@ def login_if_needed(session: requests.Session, counter: int, username: str, pass
     return get_token(session, username, password, player_id)
 
 
-def get_top_frequency(session: requests.Session, page: int, username: str, password: str, player_id: str) -> list:
+def get_top_frequency(session: requests.Session, page: int, username: str = "", password: str = "", player_id: str = "") -> list:
     """Ambil daftar frekuensi dari 1 halaman screener.
     
     POST https://exodus.stockbit.com/screener/templates
     Payload: name="FREQ", ordercol=2, ordertype="desc", filters, universe, page, sequence=3229, dst.
     Return: list of ticker symbols (max 25 per page, 12 pages = 300 total)
     """
-    token = login_if_needed(session, page, username, password, player_id)
+    u = username or os.environ.get("STOCKBIT_USERNAME", "")
+    p = password or os.environ.get("STOCKBIT_PASSWORD", "")
+    pid = player_id or os.environ.get("STOCKBIT_PLAYER_ID", "")
+    
+    token = login_if_needed(session, page, u, p, pid)
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -143,6 +147,13 @@ def get_top_frequency(session: requests.Session, page: int, username: str, passw
     }
     url = "https://exodus.stockbit.com/screener/templates"
     resp = session.post(url, headers=headers, json=body)
+    if resp.status_code == 401:
+        # Token expired atau unauthorized -> auto re-login dan ulangi request
+        print(f"  [401 Unauthorized] Token expired on screener page {page}, logging in again...", flush=True)
+        if u and p and pid:
+            token = login(session, u, p, pid)
+            headers["Authorization"] = f"Bearer {token}"
+            resp = session.post(url, headers=headers, json=body)
     resp.raise_for_status()
     data = resp.json()
     calcs = data.get("data", {}).get("calcs", [])
