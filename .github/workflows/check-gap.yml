@@ -1,11 +1,6 @@
 name: Check-Gap Sesi 2
 
 on:
-  schedule:
-    # Senin - Kamis: 13:35 WIB (06:35 UTC)
-    - cron: '35 6 * * 1-4'
-    # Jumat: 14:05 WIB (07:05 UTC)
-    - cron: '5 7 * * 5'
   workflow_dispatch:
     inputs:
       job_date:

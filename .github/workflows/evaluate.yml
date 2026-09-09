@@ -1,9 +1,6 @@
 name: Evaluate Sesi 2
 
 on:
-  schedule:
-    # Senin - Jumat: 15:50 WIB (08:50 UTC)
-    - cron: '50 8 * * 1-5'
   workflow_dispatch:
     inputs:
       job_date:
