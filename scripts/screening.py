@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.stockbit_api import create_session, get_top_frequency, fetch_tradebook_with_retry, login_if_needed, login
 from scripts.features import extract_features
-from scripts.rules import apply_rule1, apply_rule2, apply_rule3
+from scripts.rules import apply_rule1, apply_rule2, apply_rule3, apply_rule_ml, apply_rule_ga
 from scripts.supabase_client import (
     init_client, get_client, upsert_screening, 
     get_pending_watchlist, get_buy_watchlist,
@@ -177,11 +177,20 @@ def run_screening(job_date: str = None) -> dict:
                     result["total_skipped"] += 1
                     continue
                 
-                # d. Apply Rule 1
-                rule1_result = apply_rule1(features)
+                # d. Apply ML Model (primary) dengan fallback ke GA rule
+                ml_match, ml_proba = apply_rule_ml(features, threshold=0.85)
                 
-                if rule1_result:
-                    print("MATCH Rule 1!")
+                # Fallback: jika ML model tidak tersedia, coba GA rule
+                if not ml_match and ml_proba == 0.0:
+                    ml_match = apply_rule_ga(features)
+                    ml_proba = None  # GA rule tidak punya probabilitas
+                    signal_source = "ga_rule"
+                else:
+                    signal_source = "lgb_ml"
+                
+                if ml_match:
+                    proba_str = f"{ml_proba:.4f}" if ml_proba is not None else "N/A (GA)"
+                    print(f"MATCH! proba={proba_str} source={signal_source}")
                     match_count += 1
                     result["total_matched_rule1"] += 1
                     
@@ -190,7 +199,7 @@ def run_screening(job_date: str = None) -> dict:
                         "tanggal": features.get('date', job_date or datetime.utcnow().strftime("%Y-%m-%d")),
                         "ticker": ticker,
                         "hari": features.get('day_of_week', ''),
-                        "is_friday": features.get('is_friday', False),
+                        "is_friday": bool(features.get('is_friday', False)),
                         
                         # Fitur Sesi 1
                         "open_s1": features.get('open_s1', 0),
@@ -203,18 +212,20 @@ def run_screening(job_date: str = None) -> dict:
                         "bull_candle_ratio": features.get('bull_candle_ratio', 0),
                         "freq_s1": freq_map.get(ticker, features.get('freq_s1', 0)),
                         
-                        # Rule match
+                        # ML Prediction info
                         "rule1_match": True,
-                        "rule2_match": False,  # Akan di-set jika dibutuhkan
-                        "rule3_match": False,  # Akan di-set jika dibutuhkan
+                        "rule2_match": False,
+                        "rule3_match": False,
+                        "ml_proba": round(ml_proba, 4) if ml_proba is not None else None,
+                        "ml_model": signal_source,
                         
-                        # Gap & Entry (belum diisi, akan di-update oleh check-gap job)
+                        # Gap & Entry (diisi oleh check-gap job)
                         "open_s2": None,
                         "gap_pct": None,
                         "entry_decision": "PENDING",
                         "entry_price": None,
                         
-                        # Evaluasi (belum diisi, akan di-update oleh evaluate job)
+                        # Evaluasi (diisi oleh evaluate job)
                         "close_s2": None,
                         "profit_pct": None,
                         "result": "PENDING",
@@ -224,22 +235,18 @@ def run_screening(job_date: str = None) -> dict:
                         "updated_at": datetime.utcnow().isoformat() + "Z",
                     }
                     
-                    # Validasi unik constraint
                     try:
                         upsert_screening(supa, row)
                         saved_count += 1
                         result["total_saved"] += 1
-                        print(f"  Saved to DB")
+                        print(f"  Saved to DB (proba={proba_str})")
                     except Exception as e:
                         print(f"  DB save error: {e}")
                         result["errors"].append(f"DB error for {ticker}: {e}")
                 else:
-                    # Rule 1 tidak match - boleh skip atau simpan tanpa rule1_match
-                    # Menurut spec: "Jika tidak match -> skip (tidak disimpan, ATAU simpan tanpa rule1_match)"
-                    # Kita skip saja untuk menghemat space DB
                     skip_count += 1
                     result["total_skipped"] += 1
-                    print(f"  No match Rule 1 (skipping)")
+                    print(f"  No match (ML proba={ml_proba:.4f if ml_proba else 0:.4f} < 0.85)")
                 
                 # 1 detik delay antar request (rate limit Stockbit)
                 if i < len(universe) - 1:

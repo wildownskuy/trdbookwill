@@ -1,40 +1,59 @@
-# Feature Extraction — Sesi 1 Features from Tradebook JSON
+# Feature Extraction — Sesi 1 Features from Tradebook JSON (V2: 30 SHAP Features)
 # =========================================================
-# Extract features from Stockbit tradebook data for Sesi 1 BEI
-# Based on: IMPLEMENTATION_PLAN.md Section 5 & Rules Terbaik
+# UPGRADED: dari 4 fitur → 30 fitur SHAP untuk model ML
+# Logika identik dengan extract_master_dataset.py (101.802 data training)
 # =========================================================
 
 import sys
 import os
-from datetime import datetime
+import math
+from datetime import datetime, date as dt_date
 
-# Pastikan encoding UTF-8 untuk Windows
 if sys.platform.startswith('win'):
     try:
         sys.stdout.reconfigure(encoding='utf-8')
     except:
         pass
 
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+
+
+def get_raw_field(val):
+    """Safely extract float from nested raw dict or numeric."""
+    if val is None:
+        return 0.0
+    if isinstance(val, dict):
+        r = val.get('raw')
+        if isinstance(r, dict):
+            return float(r.get('raw', 0.0) or 0.0)
+        try:
+            return float(r or 0.0)
+        except (ValueError, TypeError):
+            return 0.0
+    try:
+        return float(val or 0.0)
+    except (ValueError, TypeError):
+        return 0.0
+
 
 def detect_end_s1(times_list: list, require_gap: bool = False) -> int:
     """Deteksi indeks akhir Sesi 1.
     
-    1. Iterate timestamps, cari gap > 10 menit antara candle berturut-turut (pemisah S1 dan S2).
-    2. Jika ditemukan gap > 10 menit, return indeks candle sebelum gap (akhir Sesi 1).
-    3. Jika TIDAK ditemukan gap > 10 menit:
-       - Jika require_gap == True (dipakai oleh check_gap untuk memastikan S2 sudah buka), return -1.
-       - Jika require_gap == False (dipakai saat live screening jam 12:00-13:29 WIB
-         di mana Sesi 2 belum dimulai sehingga seluruh data yang ada adalah Sesi 1):
-         return len(times_list) - 1.
-    
-    Return: index of close_s1 (0-based), or -1 if not found / empty
+    1. Iterate timestamps, cari gap > 10 menit antara candle berturut-turut.
+    2. Jika ditemukan gap > 10 menit, return indeks candle sebelum gap.
+    3. Jika TIDAK ditemukan gap:
+       - require_gap True -> return -1
+       - require_gap False -> return len(times_list) - 1
     """
     if not times_list:
         return -1
         
     for i in range(1, len(times_list)):
         try:
-            # Parse time format "HH:MM"
             h1, m1 = map(int, times_list[i-1].split(':'))
             h2, m2 = map(int, times_list[i].split(':'))
             diff_minutes = (h2 * 60 + m2) - (h1 * 60 + m1)
@@ -46,154 +65,42 @@ def detect_end_s1(times_list: list, require_gap: bool = False) -> int:
     if require_gap:
         return -1
         
-    # Saat screening jam 12:00-13:29 WIB (jeda istirahat siang), Sesi 2 belum dimulai.
-    # Seluruh data yang tersedia di times_list adalah data Sesi 1.
     return len(times_list) - 1
 
 
-def make_5min_candles(price_map: dict, times_s1: list, lot_map: dict) -> list:
-    """Buat candle 5-menit dari data per-menit Sesi 1.
-    
-    Menggabungkan 5 candle 1-menit menjadi 1 candle 5-menit.
-    Setiap candle memiliki: o (open), h (high), l (low), c (close), v (volume), t (time)
-    
-    Args:
-        price_map: dict {time: price} dari prices[].value.raw
-        times_s1: list of time strings dari sesi 1
-        lot_map: dict {time: lot} dari buy/sell lot
-    
-    Return: list of candle dicts
-    """
+def make_5min_candles(prices_list, lots_list):
+    """Buat candle 5-menit dari data per-menit S1."""
     candles = []
     bucket = []
-    
-    for t in times_s1:
-        p = price_map.get(t)
-        if p is None:
-            continue
-        bucket.append((t, p, lot_map.get(t, 0)))
+    for i in range(len(prices_list)):
+        bucket.append((prices_list[i], lots_list[i] if i < len(lots_list) else 0.0))
         if len(bucket) == 5:
-            # Buat candle 5-menit
-            candle = {
-                'o': bucket[0][1],  # open = price pertama di bucket
-                'h': max(b[1] for b in bucket),  # high = max price di bucket
-                'l': min(b[1] for b in bucket),  # low = min price di bucket
-                'c': bucket[-1][1],  # close = price terakhir di bucket
-                'v': sum(b[2] for b in bucket),  # volume = total lot di bucket
-                't': bucket[0][0]  # time = time candle pertama
-            }
-            candles.append(candle)
+            candles.append({
+                'o': bucket[0][0],
+                'h': max(x[0] for x in bucket),
+                'l': min(x[0] for x in bucket),
+                'c': bucket[-1][0],
+                'v': sum(x[1] for x in bucket)
+            })
             bucket = []
-    
-    # Sisa candle (kurang dari 5) tetap ditambahkan
     if bucket:
-        candle = {
-            'o': bucket[0][1],
-            'h': max(b[1] for b in bucket),
-            'l': min(b[1] for b in bucket),
-            'c': bucket[-1][1],
-            'v': sum(b[2] for b in bucket),
-            't': bucket[0][0]
-        }
-        candles.append(candle)
-    
+        candles.append({
+            'o': bucket[0][0],
+            'h': max(x[0] for x in bucket),
+            'l': min(x[0] for x in bucket),
+            'c': bucket[-1][0],
+            'v': sum(x[1] for x in bucket)
+        })
     return candles
 
 
-def calc_rsi(candles: list, period: int = 14) -> float:
-    """Hitung RSI 14 periode dari candle 5-menit.
-    
-    Formula: 100 - (100 / (1 + RS))
-    RS = avg_gain / avg_loss dari period candle terakhir
-    
-    Jika data kurang dari period + 1 candle, return 50.0 (netral).
-    """
-    closes_arr = [c['c'] for c in candles]
-    if len(closes_arr) < period + 1:
-        return 50.0
-    
-    gains = []
-    losses = []
-    
-    # Ambil period diff dari candle terakhir
-    for i in range(1, period + 1):
-        diff = closes_arr[-(period - i + 2)] - closes_arr[-(period - i + 1)]
-        if diff >= 0:
-            gains.append(diff)
-        else:
-            losses.append(abs(diff))
-    
-    avg_gain = sum(gains) / period if gains else 0
-    avg_loss = sum(losses) / period if losses else 0
-    
-    if avg_loss == 0:
-        return 100.0
-    
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return round(rsi, 4)
-
-
-def calc_body_pct(open_s1: float, close_s1: float) -> float:
-    """Hitung body percentage: (close_s1 - open_s1) / open_s1 * 100"""
-    if open_s1 == 0:
-        return 0.0
-    return round((close_s1 - open_s1) / open_s1 * 100, 4)
-
-
-def calc_vol_spike_ratio(candles: list) -> float:
-    """Hitung vol_spike_ratio: avg volume 30 menit terakhir / rata-rata sebelumnya.
-    
-    Jika len(candles) >= 6:
-    - avg_vol = rata-rata volume candle 0 sampai -6 (30 menit sebelum)
-    - last_vol = rata-rata volume candle terakhir 5 menit
-    - vol_spike_ratio = last_vol / avg_vol jika avg_vol > 0, else 1
-    """
-    if len(candles) < 6:
-        return 1.0
-    
-    # 30 menit terakhir = 6 candle 5-menit sebelum candle terakhir
-    prev_candles = candles[:-6]
-    last_candles = candles[-6:]
-    
-    if not prev_candles:
-        return 1.0
-    
-    avg_vol = sum(c['v'] for c in prev_candles) / max(len(prev_candles), 1)
-    last_vol = sum(c['v'] for c in last_candles) / 6
-    
-    if avg_vol > 0:
-        ratio = last_vol / avg_vol
-    else:
-        ratio = 1.0
-    
-    return round(ratio, 4)
-
-
-def calc_bull_candle_ratio(candles: list) -> float:
-    """Hitung bull_candle_ratio: jumlah candle bullish / total candle sesi 1."""
-    if not candles:
-        return 0.0
-    bullish = sum(1 for c in candles if c['c'] > c['o'])
-    return round(bullish / len(candles), 4)
-
-
 def extract_features(tradebook_json: dict) -> dict:
-    """Ekstraksi semua fitur dari tradebook JSON.
+    """Ekstrak 30 fitur SHAP dari tradebook JSON untuk model ML.
     
-    Langkah-langkah:
-    1. Parse prices, buy, sell dari tradebook
-    2. Deteksi akhir sesi 1 (gap > 10 menit)
-    3. Buat candle 5-menit dari data sesi 1
-    4. Hitung semua fitur: rsi_s1, s1_body_pct, vol_spike_ratio, bull_candle_ratio
-    5. Return dict fitur, atau None jika data invalid
+    Logika identik dengan extract_master_dataset.py yang digunakan
+    untuk melatih model pada 101.802 data.
     
-    CATATAN PENTING (dari IMPLEMENTATION_PLAN.md):
-    - prices[].value.raw = satu-satunya field harga
-    - frequency dan lot di prices selalu null
-    - File kosong (<=600 bytes) = SKIP (return None)
-    - net_values = KUMULATIF, bukan delta per menit
-    - Deteksi akhir S1: gap > 10 menit di timestamps, JANGAN hardcode jam
+    Return dict fitur, atau None jika data invalid.
     """
     try:
         data = tradebook_json.get("data", {})
@@ -201,131 +108,275 @@ def extract_features(tradebook_json: dict) -> dict:
             return None
         
         prices = data.get("prices", [])
-        buy = data.get("buy", [])
-        sell = data.get("sell", [])
-        
-        # Check for empty/data kosong
-        # File kosong <= 600 bytes = SKIP
-        import json
-        json_str = json.dumps(tradebook_json)
-        if len(json_str) <= 600:
-            print("  [SKIP] Tradebook file too small (<=600 bytes)")
+        if not prices or len(prices) < 10:
             return None
         
-        # Build price map dan lot map dari buy/sell
+        # Cek data kosong
+        import json as _json
+        if len(_json.dumps(tradebook_json)) <= 600:
+            return None
+        
+        buy_arr = data.get("buy", [])
+        sell_arr = data.get("sell", [])
+        bm_buy_arr = data.get("big_money_buy", [])
+        bm_sell_arr = data.get("big_money_sell", [])
+        net_val_arr = data.get("net_values", [])
+        bm_net_val_arr = data.get("big_money_net_values", [])
+        net_vol_arr = data.get("net_values_volume", [])
+        bm_net_vol_arr = data.get("big_money_net_values_volume", [])
+        
+        # Build price map
         price_map = {}
-        lot_map = {}
-        
-        # Dari prices - hanya value.raw yang valid
+        valid_times = []
         for p in prices:
-            t = p.get("time", "")
-            v = p.get("value", {})
-            raw = v.get("raw") if isinstance(v, dict) else None
-            if t and raw is not None:
-                try:
-                    price_map[t] = float(raw)
-                except ValueError:
-                    pass
+            t = p.get("time")
+            v = get_raw_field(p.get("value"))
+            if t and v > 0:
+                price_map[t] = v
+                valid_times.append(t)
         
-        # Dari buy/sell - ambil lot dan JUMLAHKAN volume (buy + sell)
-        for b in buy:
-            t = b.get("time", "")
-            lot_raw = b.get("lot", {}).get("raw") if isinstance(b.get("lot"), dict) else None
-            if t and lot_raw is not None:
-                try:
-                    lot_map[t] = lot_map.get(t, 0.0) + float(lot_raw)
-                except ValueError:
-                    pass
-        
-        for s in sell:
-            t = s.get("time", "")
-            lot_raw = s.get("lot", {}).get("raw") if isinstance(s.get("lot"), dict) else None
-            if t and lot_raw is not None:
-                try:
-                    lot_map[t] = lot_map.get(t, 0.0) + float(lot_raw)
-                except ValueError:
-                    pass
-        
-        # Ambil times list dari prices
-        times_list = [p.get("time", "") for p in prices if p.get("time")]
-        
-        if not times_list or not price_map:
-            print("  [SKIP] No price data available")
+        if len(valid_times) < 10:
             return None
         
-        # 1. Deteksi akhir Sesi 1
-        s1_end_idx = detect_end_s1(times_list)
+        # Deteksi akhir sesi 1 (gap > 10 menit)
+        s1_end_idx = detect_end_s1(valid_times)
         if s1_end_idx == -1:
-            print("  [SKIP] Could not detect end of Sesi 1 (no gap > 10 min)")
             return None
         
-        # Ambil data hingga akhir S1
-        s1_times = times_list[:s1_end_idx + 1]
-        
-        # 2. Buat candle 5-menit
-        candles = make_5min_candles(price_map, s1_times, lot_map)
-        
-        if len(candles) < 2:
-            print("  [SKIP] Not enough data for 5-min candles (need >= 2)")
+        times_s1 = valid_times[:s1_end_idx + 1]
+        if len(times_s1) < 5:
             return None
         
-        # 3. Hitung fitur dasar dari candle
-        # Ambil candle terakhir sebagai representasi close_s1
-        last_candle = candles[-1]
-        close_s1 = last_candle['c']
+        close_s1 = price_map[times_s1[-1]]
         
-        # Open Sesi 1 adalah price pada timestamp pertama
-        first_time = s1_times[0] if s1_times else None
-        open_s1 = price_map.get(first_time, last_candle['o']) if first_time else last_candle['o']
+        # Build time-to-index mapping
+        time_to_idx = {p.get("time"): i for i, p in enumerate(prices) if p.get("time")}
+        last_s1_idx = time_to_idx.get(times_s1[-1], 0)
         
-        s1_body_pct = calc_body_pct(open_s1, close_s1)
+        # === ORDER FLOW & BANDARMOLOGY ===
+        buy_lot_s1 = get_raw_field(buy_arr[last_s1_idx].get('lot')) if last_s1_idx < len(buy_arr) else 0.0
+        sell_lot_s1 = get_raw_field(sell_arr[last_s1_idx].get('lot')) if last_s1_idx < len(sell_arr) else 0.0
+        net_lot_s1 = buy_lot_s1 - sell_lot_s1
+        total_lot_s1 = buy_lot_s1 + sell_lot_s1
+        buy_ratio_s1 = buy_lot_s1 / total_lot_s1 if total_lot_s1 > 0 else 0.5
         
-        rsi_s1 = calc_rsi(candles)
-        vol_spike_ratio = calc_vol_spike_ratio(candles)
-        bull_candle_ratio = calc_bull_candle_ratio(candles)
+        bm_buy_lot_s1 = get_raw_field(bm_buy_arr[last_s1_idx].get('lot')) if last_s1_idx < len(bm_buy_arr) else 0.0
+        bm_sell_lot_s1 = get_raw_field(bm_sell_arr[last_s1_idx].get('lot')) if last_s1_idx < len(bm_sell_arr) else 0.0
+        bm_net_lot_s1 = bm_buy_lot_s1 - bm_sell_lot_s1
+        bm_total_lot_s1 = bm_buy_lot_s1 + bm_sell_lot_s1
+        bm_buy_ratio_s1 = bm_buy_lot_s1 / bm_total_lot_s1 if bm_total_lot_s1 > 0 else 0.5
         
-        # Ambil harga S1 (open, close, high, low)
-        # Dari semua candle 5-menit S1
-        all_opens = [c['o'] for c in candles]
-        all_closes = [c['c'] for c in candles]
-        all_highs = [c['h'] for c in candles]
-        all_lows = [c['l'] for c in candles]
+        net_value_end_s1 = get_raw_field(net_val_arr[last_s1_idx].get('value')) if last_s1_idx < len(net_val_arr) else 0.0
+        bm_net_value_end_s1 = get_raw_field(bm_net_val_arr[last_s1_idx].get('value')) if last_s1_idx < len(bm_net_val_arr) else 0.0
+        net_vol_end_s1 = get_raw_field(net_vol_arr[last_s1_idx].get('value')) if last_s1_idx < len(net_vol_arr) else 0.0
+        bm_net_vol_end_s1 = get_raw_field(bm_net_vol_arr[last_s1_idx].get('value')) if last_s1_idx < len(bm_net_vol_arr) else 0.0
         
-        # Gunakan close_s1 dari candle terakhir (ini sesuai definisi fitur)
-        close_s1_price = close_s1
-        open_s1_price = open_s1
+        # Build minute-by-minute increments for S1
+        min_lots = []
+        min_prices = []
+        bm_lots = []
+        prev_tot = 0.0
+        prev_bm = 0.0
         
-        high_s1 = max(all_highs)
-        low_s1 = min(all_lows)
-        
-        # Tanggal dan hari
-        from datetime import date as dt_date
-        today = dt_date.today()
+        for t in times_s1:
+            idx = time_to_idx.get(t, 0)
+            b = get_raw_field(buy_arr[idx].get('lot')) if idx < len(buy_arr) else 0.0
+            s = get_raw_field(sell_arr[idx].get('lot')) if idx < len(sell_arr) else 0.0
+            cur_tot = b + s
+            d_tot = max(0.0, cur_tot - prev_tot)
+            min_lots.append(d_tot)
+            prev_tot = cur_tot
 
-        # Fitur lengkap
+            bmb = get_raw_field(bm_buy_arr[idx].get('lot')) if idx < len(bm_buy_arr) else 0.0
+            bms = get_raw_field(bm_sell_arr[idx].get('lot')) if idx < len(bm_sell_arr) else 0.0
+            cur_bm = bmb + bms
+            d_bm = max(0.0, cur_bm - prev_bm)
+            bm_lots.append(d_bm)
+            prev_bm = cur_bm
+
+            min_prices.append(price_map[t])
+        
+        n_pts = len(min_lots)
+        last30_pts = min_lots[-30:] if n_pts >= 30 else min_lots
+        prior_pts = min_lots[:-30] if n_pts > 30 else []
+        avg_prior = sum(prior_pts) / len(prior_pts) if prior_pts else 1.0
+        avg_last30 = sum(last30_pts) / len(last30_pts) if last30_pts else 1.0
+        vol_spike_ratio = avg_last30 / avg_prior if avg_prior > 0 else 1.0
+        
+        bm_last30_sum = sum(bm_lots[-30:]) if n_pts >= 30 else sum(bm_lots)
+        bm_late_share = bm_last30_sum / bm_total_lot_s1 if bm_total_lot_s1 > 0 else 0.0
+        
+        half = n_pts // 2
+        bm_h1 = sum(bm_lots[:half])
+        bm_h2 = sum(bm_lots[half:])
+        bm_growth_ratio = bm_h2 / bm_h1 if bm_h1 > 0 else (1.0 if bm_h2 == 0 else 2.0)
+        
+        # === 5-MINUTE CANDLES ===
+        candles = make_5min_candles(min_prices, min_lots)
+        nc = len(candles)
+        if nc == 0:
+            return None
+        
+        s1_open = candles[0]['o']
+        s1_high = max(c['h'] for c in candles)
+        s1_low = min(c['l'] for c in candles)
+        s1_range = s1_high - s1_low if s1_high > s1_low else 1.0
+        
+        # === ANATOMI CANDLESTICK S1 ===
+        s1_body_pct = (close_s1 - s1_open) / s1_open * 100.0 if s1_open > 0 else 0.0
+        s1_lower_shadow = (min(s1_open, close_s1) - s1_low) / s1_open * 100.0 if s1_open > 0 else 0.0
+        s1_upper_shadow = (s1_high - max(s1_open, close_s1)) / s1_open * 100.0 if s1_open > 0 else 0.0
+        s1_close_position = (close_s1 - s1_low) / s1_range
+        s1_is_bullish = 1 if close_s1 > s1_open else 0
+        
+        l6 = candles[-6:] if nc >= 6 else candles
+        l6_open = l6[0]['o']
+        l6_close = l6[-1]['c']
+        l6_high = max(c['h'] for c in l6)
+        l6_low = min(c['l'] for c in l6)
+        l6_range = l6_high - l6_low if l6_high > l6_low else 1.0
+        
+        last30_body_pct = (l6_close - l6_open) / l6_open * 100.0 if l6_open > 0 else 0.0
+        last30_close_position = (l6_close - l6_low) / l6_range
+        
+        lc = candles[-1]
+        lc_range = lc['h'] - lc['l'] if lc['h'] > lc['l'] else 1.0
+        lc_body = abs(lc['c'] - lc['o'])
+        last_candle_body_ratio = lc_body / lc_range
+        last_candle_lower_shadow = (min(lc['o'], lc['c']) - lc['l']) / lc_range
+        last_candle_upper_shadow = (lc['h'] - max(lc['o'], lc['c'])) / lc_range
+        
+        # === POLA PRICE ACTION ===
+        bull_count = sum(1 for c in candles if c['c'] > c['o'])
+        bull_candle_ratio = bull_count / nc if nc > 0 else 0.5
+        
+        marubozu_bear = 1 if (lc['c'] < lc['o'] and last_candle_body_ratio >= 0.85 and last_candle_upper_shadow < 0.08 and last_candle_lower_shadow < 0.08) else 0
+        
+        inside_bar = 0
+        if nc >= 2:
+            pc = candles[-2]
+            if lc['h'] <= pc['h'] and lc['l'] >= pc['l']:
+                inside_bar = 1
+        
+        # === MOMENTUM & INDIKATOR ===
+        closes = [c['c'] for c in candles]
+        if len(closes) >= 15:
+            diffs = [closes[i] - closes[i-1] for i in range(len(closes)-14, len(closes))]
+            g = [d for d in diffs if d >= 0]
+            l_list = [abs(d) for d in diffs if d < 0]
+            ag = sum(g) / 14.0
+            al = sum(l_list) / 14.0
+            rs = ag / al if al > 0 else 100.0
+            rsi_s1 = 100.0 - (100.0 / (1.0 + rs))
+        else:
+            rsi_s1 = 50.0
+        
+        pct_change_s1 = (close_s1 - s1_open) / s1_open * 100.0 if s1_open > 0 else 0.0
+        start_last30_price = min_prices[-30] if len(min_prices) >= 30 else min_prices[0]
+        momentum_30m_s1 = (close_s1 - start_last30_price) / start_last30_price * 100.0 if start_last30_price > 0 else 0.0
+        s1_range_pct = (s1_high - s1_low) / s1_open * 100.0 if s1_open > 0 else 0.0
+        
+        vol_sum = sum(min_lots)
+        pv_sum = sum(p * v for p, v in zip(min_prices, min_lots))
+        vwap_s1 = pv_sum / vol_sum if vol_sum > 0 else close_s1
+        vwap_dist_pct = (close_s1 - vwap_s1) / vwap_s1 * 100.0 if vwap_s1 > 0 else 0.0
+        is_above_vwap = 1 if close_s1 > vwap_s1 else 0
+        
+        # Bollinger Bandwidth
+        bb_window = closes[-20:] if len(closes) >= 20 else closes
+        bb_mean = sum(bb_window) / len(bb_window)
+        bb_var = sum((x - bb_mean) ** 2 for x in bb_window) / len(bb_window)
+        bb_std = math.sqrt(bb_var)
+        bb_bandwidth_20 = (4.0 * bb_std / bb_mean * 100.0) if bb_mean > 0 else 0.0
+        
+        # Price Slope (linear regression)
+        if HAS_NUMPY and len(min_prices) > 1:
+            x_arr = np.arange(len(min_prices), dtype=np.float64)
+            y_arr = np.array(min_prices, dtype=np.float64)
+            slope, _ = np.polyfit(x_arr, y_arr, 1)
+            price_slope_s1 = (slope / s1_open * 100.0) if s1_open > 0 else 0.0
+        elif len(min_prices) > 1:
+            n = len(min_prices)
+            sx = n * (n - 1) / 2
+            sx2 = n * (n - 1) * (2 * n - 1) / 6
+            sy = sum(min_prices)
+            sxy = sum(i * p for i, p in enumerate(min_prices))
+            denom = n * sx2 - sx * sx
+            slope = (n * sxy - sx * sy) / denom if denom != 0 else 0
+            price_slope_s1 = (slope / s1_open * 100.0) if s1_open > 0 else 0.0
+        else:
+            price_slope_s1 = 0.0
+        
+        # Reversal count
+        rev_count = 0
+        for i in range(2, len(min_prices)):
+            d1 = min_prices[i-1] - min_prices[i-2]
+            d2 = min_prices[i] - min_prices[i-1]
+            if (d1 > 0 and d2 < 0) or (d1 < 0 and d2 > 0):
+                rev_count += 1
+        
+        # === KALENDER ===
+        today = dt_date.today()
+        weekday = today.weekday()
+        
+        # === RETURN SEMUA FITUR ===
         features = {
-            # Fitur Sesi 1 dasar
-            'open_s1': round(open_s1_price, 2),
-            'close_s1': round(close_s1_price, 2),
-            'high_s1': round(high_s1, 2),
-            'low_s1': round(low_s1, 2),
-            
-            # Fitur dari analysis
-            'rsi_s1': rsi_s1,
-            's1_body_pct': s1_body_pct,
-            'vol_spike_ratio': vol_spike_ratio,
-            'bull_candle_ratio': bull_candle_ratio,
-            
-            # Metadata & Kalender
+            # Order Flow
+            'buy_lot_s1': float(buy_lot_s1),
+            'sell_lot_s1': float(sell_lot_s1),
+            'net_lot_s1': float(net_lot_s1),
+            'buy_ratio_s1': float(buy_ratio_s1),
+            'bm_buy_lot_s1': float(bm_buy_lot_s1),
+            'bm_sell_lot_s1': float(bm_sell_lot_s1),
+            'bm_net_lot_s1': float(bm_net_lot_s1),
+            'bm_buy_ratio_s1': float(bm_buy_ratio_s1),
+            'net_value_end_s1': float(net_value_end_s1),
+            'bm_net_value_end_s1': float(bm_net_value_end_s1),
+            'net_vol_end_s1': float(net_vol_end_s1),
+            'bm_net_vol_end_s1': float(bm_net_vol_end_s1),
+            'vol_spike_ratio': float(vol_spike_ratio),
+            'bm_late_share': float(bm_late_share),
+            'bm_growth_ratio': float(bm_growth_ratio),
+            # Candlestick
+            's1_body_pct': float(s1_body_pct),
+            's1_lower_shadow': float(s1_lower_shadow),
+            's1_upper_shadow': float(s1_upper_shadow),
+            's1_close_position': float(s1_close_position),
+            's1_is_bullish': int(s1_is_bullish),
+            'last30_body_pct': float(last30_body_pct),
+            'last30_close_position': float(last30_close_position),
+            'last_candle_body_ratio': float(last_candle_body_ratio),
+            'last_candle_lower_shadow': float(last_candle_lower_shadow),
+            'last_candle_upper_shadow': float(last_candle_upper_shadow),
+            # Patterns
+            'bull_candle_ratio': float(bull_candle_ratio),
+            'marubozu_bear': int(marubozu_bear),
+            'inside_bar': int(inside_bar),
+            # Momentum
+            'rsi_s1': float(rsi_s1),
+            'pct_change_s1': float(pct_change_s1),
+            'momentum_30m_s1': float(momentum_30m_s1),
+            's1_range_pct': float(s1_range_pct),
+            'vwap_s1': float(vwap_s1),
+            'vwap_dist_pct': float(vwap_dist_pct),
+            'is_above_vwap': int(is_above_vwap),
+            'bb_bandwidth_20': float(bb_bandwidth_20),
+            'price_slope_s1': float(price_slope_s1),
+            'reversal_count': int(rev_count),
+            # Kalender
+            'is_monday': 1 if weekday == 0 else 0,
+            'is_tuesday': 1 if weekday == 1 else 0,
+            'is_wednesday': 1 if weekday == 2 else 0,
+            'is_thursday': 1 if weekday == 3 else 0,
+            'is_friday': 1 if weekday == 4 else 0,
+            # Metadata (tambahan untuk Supabase, bukan input model)
+            'open_s1': round(s1_open, 2),
+            'close_s1': round(close_s1, 2),
+            'high_s1': round(s1_high, 2),
+            'low_s1': round(s1_low, 2),
             'date': today.strftime("%Y-%m-%d"),
             'day_of_week': today.strftime("%A"),
-            'is_friday': today.weekday() == 4,
-            'freq_s1': len(candles),
-            'times_analyzed': len(times_list),
-            
-            # Pola candle tambahan (dari features_merged.csv format)
-            's1_is_bullish': 1 if close_s1 > open_s1 else 0,
-            'last30_is_bullish': 1 if (candles and candles[-1]['c'] > candles[-1]['o']) else 0,
+            'freq_s1': nc,
         }
         
         return features
@@ -337,8 +388,6 @@ def extract_features(tradebook_json: dict) -> dict:
         return None
 
 
-# Test manual jika dijalankan langsung
 if __name__ == "__main__":
-    print("Feature extraction module loaded.")
-    print("Functions available: extract_features(), detect_end_s1(), make_5min_candles(), calc_body_pct()")
-    print("Trading rules logic is located in scripts/rules.py")
+    print("Feature extraction V2 module loaded (30 SHAP features).")
+    print("Functions: extract_features(tradebook_json), detect_end_s1(times_list)")
