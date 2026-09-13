@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '../lib/supabase';
-import { TrendingUp, PieChart, BarChart3, LineChart } from 'lucide-react';
+import { TrendingUp, TrendingDown, PieChart, BarChart3, BarChart2, LineChart, DatabaseZap } from 'lucide-react';
 
 // Dynamic import ReactApexChart agar tidak crash di SSR Next.js
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
@@ -342,7 +342,9 @@ export function WinRateChart({ screenings = [], date }) {
           <div>
             {historyStats.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-64 text-center gap-3">
-                <span className="text-4xl">📊</span>
+                <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700">
+                  <BarChart2 className="w-10 h-10 text-slate-500" />
+                </div>
                 <p className="text-slate-400 text-sm font-medium">Belum Ada Data Historis</p>
                 <p className="text-slate-600 text-xs max-w-xs">Grafik tren akan muncul setelah evaluasi pertama selesai (15:50 hari kerja pertama).</p>
               </div>
@@ -376,8 +378,10 @@ export function WinRateChart({ screenings = [], date }) {
                 Proporsi Hasil Eksekusi (Win / Loss / Flat)
               </h3>
               {donutData.isEmpty ? (
-                <div className="flex flex-col items-center justify-center h-52 gap-2">
-                  <span className="text-3xl">🥧</span>
+                <div className="flex flex-col items-center justify-center h-52 gap-3">
+                  <div className="p-3 rounded-2xl bg-slate-800/60 border border-slate-700">
+                    <DatabaseZap className="w-8 h-8 text-slate-500" />
+                  </div>
                   <p className="text-slate-500 text-xs">Belum ada trade yang selesai dievaluasi</p>
                 </div>
               ) : (
@@ -406,8 +410,10 @@ export function WinRateChart({ screenings = [], date }) {
               <span className="text-emerald-400 font-mono font-semibold">10 Top Performers</span>
             </div>
             {topGainers.categories.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-52 gap-2">
-                <span className="text-3xl">📉</span>
+              <div className="flex flex-col items-center justify-center h-52 gap-3">
+                <div className="p-3 rounded-2xl bg-slate-800/60 border border-slate-700">
+                  <TrendingDown className="w-8 h-8 text-slate-500" />
+                </div>
                 <p className="text-slate-500 text-xs">Belum ada data profit untuk tanggal ini</p>
               </div>
             ) : (
