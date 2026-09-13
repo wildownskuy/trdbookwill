@@ -223,7 +223,7 @@ export function HistoryTable({ date } = {}) {
         return (
           <span className="text-slate-400 font-mono text-[11px] flex items-center justify-center gap-1">
             <Clock className="w-3 h-3 text-slate-500" />
-            {ts ? new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '—'}
+            {ts ? new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) + ' WIB' : '—'}
           </span>
         );
       },

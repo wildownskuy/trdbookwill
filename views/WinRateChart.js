@@ -8,7 +8,7 @@ import { TrendingUp, PieChart, BarChart3, LineChart } from 'lucide-react';
 // Dynamic import ReactApexChart agar tidak crash di SSR Next.js
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
-export function WinRateChart({ screenings = [] }) {
+export function WinRateChart({ screenings = [], date }) {
   const [activeTab, setActiveTab] = useState('trend'); // 'trend' | 'distribution' | 'topGainers'
   const [historyStats, setHistoryStats] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -116,12 +116,7 @@ export function WinRateChart({ screenings = [] }) {
   }, [historyStats]);
 
   const trendSeries = useMemo(() => {
-    if (historyStats.length === 0) {
-      return [
-        { name: 'Win Rate Harian (%)', data: [34.5] },
-        { name: 'Win Rate All-Time (%)', data: [24.9] },
-      ];
-    }
+    if (historyStats.length === 0) return [];
     return [
       {
         name: 'Win Rate Harian (%)',
@@ -136,23 +131,25 @@ export function WinRateChart({ screenings = [] }) {
 
   // 2. DATA: Donut Breakdown (WIN / LOSS / FLAT)
   const donutData = useMemo(() => {
-    const wins = screenings.filter((s) => s.result === 'WIN').length;
+    const wins   = screenings.filter((s) => s.result === 'WIN').length;
     const losses = screenings.filter((s) => s.result === 'LOSS').length;
-    const flats = screenings.filter((s) => s.result === 'FLAT').length;
-    const total = wins + losses + flats;
+    const flats  = screenings.filter((s) => s.result === 'FLAT').length;
+    const total  = wins + losses + flats;
 
     return {
-      series: total > 0 ? [wins, losses, flats] : [59, 71, 41],
+      isEmpty: total === 0,
+      series: total > 0 ? [wins, losses, flats] : [1, 1, 1], // dummy equal share jika kosong (untuk render donut shape)
       options: {
         chart: { type: 'donut', background: 'transparent' },
         labels: ['WIN', 'LOSS', 'FLAT'],
-        colors: ['#10B981', '#F43F5E', '#64748B'],
+        colors: total > 0 ? ['#10B981', '#F43F5E', '#64748B'] : ['#1E293B', '#1E293B', '#1E293B'],
         stroke: { colors: ['#121824'], width: 3 },
-        dataLabels: { enabled: true, formatter: (val) => `${val.toFixed(1)}%` },
+        dataLabels: { enabled: total > 0, formatter: (val) => `${val.toFixed(1)}%` },
         legend: {
           position: 'bottom',
           labels: { colors: '#CBD5E1' },
           formatter: (val, opts) => {
+            if (total === 0) return `${val}: 0 Saham`;
             const count = opts.w.globals.series[opts.seriesIndex];
             return `${val}: ${count} Saham`;
           },
@@ -162,25 +159,22 @@ export function WinRateChart({ screenings = [] }) {
             donut: {
               size: '72%',
               labels: {
-                show: true,
+                show: total > 0,
                 total: {
                   show: true,
-                  label: 'Total Trade',
+                  label: total > 0 ? 'Total Trade' : 'Belum Ada',
                   color: '#94A3B8',
                   fontSize: '12px',
-                  formatter: (w) => `${w.globals.seriesTotals.reduce((a, b) => a + b, 0)} Saham`,
+                  formatter: (w) => total > 0
+                    ? `${w.globals.seriesTotals.reduce((a, b) => a + b, 0)} Saham`
+                    : '—',
                 },
-                value: {
-                  color: '#FFFFFF',
-                  fontSize: '22px',
-                  fontWeight: 700,
-                  fontFamily: 'inherit',
-                },
+                value: { color: '#FFFFFF', fontSize: '22px', fontWeight: 700, fontFamily: 'inherit' },
               },
             },
           },
         },
-        tooltip: { theme: 'dark' },
+        tooltip: { theme: 'dark', enabled: total > 0 },
       },
     };
   }, [screenings]);
@@ -262,7 +256,7 @@ export function WinRateChart({ screenings = [] }) {
         },
         dataLabels: {
           enabled: true,
-          formatter: (val) => `+${val}%`,
+          formatter: (val) => `${Number(val) > 0 ? '+' : ''}${val}%`,
           offsetX: 30,
           style: { fontSize: '11px', colors: ['#34D399'], fontWeight: 600 },
         },
@@ -279,7 +273,7 @@ export function WinRateChart({ screenings = [] }) {
         grid: { borderColor: '#1E293B', strokeDashArray: 4 },
         tooltip: {
           theme: 'dark',
-          y: { formatter: (val) => `+${val}% Return` },
+          y: { formatter: (val) => `${Number(val) > 0 ? '+' : ''}${val}% Return` },
         },
       },
     };
@@ -346,24 +340,34 @@ export function WinRateChart({ screenings = [] }) {
           </div>
         ) : activeTab === 'trend' ? (
           <div>
-            {historyStats.length <= 1 && (
-              <div className="mx-2 mb-3 p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
-                  <span>
-                    Database saat ini mencatat <strong>1 hari live trading</strong> ({historyStats[0]?.tanggal || 'Hari Ini'}). Garis tren multi-hari akan otomatis tersambung mulai hari ke-2.
-                  </span>
-                </div>
-                <span className="font-mono text-emerald-400 font-bold ml-2 shrink-0">
-                  {historyStats[0]?.win_rate_harian ? Number(historyStats[0].win_rate_harian).toFixed(1) + '%' : '—'}
-                </span>
+            {historyStats.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-center gap-3">
+                <span className="text-4xl">📊</span>
+                <p className="text-slate-400 text-sm font-medium">Belum Ada Data Historis</p>
+                <p className="text-slate-600 text-xs max-w-xs">Grafik tren akan muncul setelah evaluasi pertama selesai (15:50 hari kerja pertama).</p>
               </div>
+            ) : (
+              <>
+                {historyStats.length <= 1 && (
+                  <div className="mx-2 mb-3 p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+                      <span>
+                        Database mencatat <strong>1 hari live trading</strong> ({historyStats[0]?.tanggal || 'Hari Ini'}). Tren multi-hari akan tersambung mulai hari ke-2.
+                      </span>
+                    </div>
+                    <span className="font-mono text-emerald-400 font-bold ml-2 shrink-0">
+                      {historyStats[0]?.win_rate_harian ? Number(historyStats[0].win_rate_harian).toFixed(1) + '%' : '—'}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between mb-2 text-xs text-slate-400 px-2">
+                  <span>Kurva Win Rate Harian vs Target Kumulatif</span>
+                  <span className="text-emerald-400 font-mono font-medium">Auto-smoothing enabled</span>
+                </div>
+                <Chart options={trendOptions} series={trendSeries} type="area" height={290} />
+              </>
             )}
-            <div className="flex items-center justify-between mb-2 text-xs text-slate-400 px-2">
-              <span>Kurva Win Rate Harian vs Target Kumulatif</span>
-              <span className="text-emerald-400 font-mono font-medium">Auto-smoothing enabled</span>
-            </div>
-            <Chart options={trendOptions} series={trendSeries} type="area" height={290} />
           </div>
         ) : activeTab === 'distribution' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
@@ -371,7 +375,14 @@ export function WinRateChart({ screenings = [] }) {
               <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 text-center">
                 Proporsi Hasil Eksekusi (Win / Loss / Flat)
               </h3>
-              <Chart options={donutData.options} series={donutData.series} type="donut" height={270} />
+              {donutData.isEmpty ? (
+                <div className="flex flex-col items-center justify-center h-52 gap-2">
+                  <span className="text-3xl">🥧</span>
+                  <p className="text-slate-500 text-xs">Belum ada trade yang selesai dievaluasi</p>
+                </div>
+              ) : (
+                <Chart options={donutData.options} series={donutData.series} type="donut" height={270} />
+              )}
             </div>
             <div>
               <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 text-center">
@@ -388,13 +399,24 @@ export function WinRateChart({ screenings = [] }) {
         ) : (
           <div>
             <div className="flex items-center justify-between mb-2 text-xs text-slate-400 px-2">
-              <span>Saham dengan Kenaikan Tertinggi di Sesi 2 Hari Ini</span>
+              <span>
+                Saham dengan Kenaikan Tertinggi di Sesi 2
+                {date ? ` — ${date === new Date().toISOString().split('T')[0] ? 'Hari Ini' : date}` : ' — Hari Ini'}
+              </span>
               <span className="text-emerald-400 font-mono font-semibold">10 Top Performers</span>
             </div>
-            <Chart options={topGainers.options} series={topGainers.series} type="bar" height={300} />
+            {topGainers.categories.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-52 gap-2">
+                <span className="text-3xl">📉</span>
+                <p className="text-slate-500 text-xs">Belum ada data profit untuk tanggal ini</p>
+              </div>
+            ) : (
+              <Chart options={topGainers.options} series={topGainers.series} type="bar" height={300} />
+            )}
           </div>
         )}
       </div>
     </div>
   );
 }
+

@@ -170,7 +170,7 @@ export default function HomePage() {
 
         {/* Section 2: ApexCharts Analytics Suite */}
         <section>
-          <WinRateChart screenings={dashboardState.screeningsToday} />
+          <WinRateChart screenings={dashboardState.screeningsToday} date={selectedDate} />
         </section>
 
         {/* Section 3: Screener & Tradebook Data Table */}
