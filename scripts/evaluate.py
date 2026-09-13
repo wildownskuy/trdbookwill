@@ -8,7 +8,14 @@ import sys
 import os
 import time
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# Timezone WIB (UTC+7) — konsisten dengan jadwal BEI
+WIB = timezone(timedelta(hours=7))
+
+def _today_wib() -> str:
+    """Return tanggal hari ini dalam WIB (Asia/Jakarta), format YYYY-MM-DD."""
+    return datetime.now(tz=WIB).strftime("%Y-%m-%d")
 
 # Pastikan encoding UTF-8 untuk Windows
 if sys.platform.startswith('win'):
@@ -79,7 +86,7 @@ def run_evaluate(job_date: str = None) -> dict:
     
     result = {
         "job": "evaluate",
-        "date": job_date or datetime.now().strftime("%Y-%m-%d"),
+        "date": job_date or _today_wib(),
         "total_buy": 0,
         "total_wins": 0,
         "total_losses": 0,
@@ -120,7 +127,7 @@ def run_evaluate(job_date: str = None) -> dict:
         
         # 2. Query screenings BUY untuk hari ini
         print("\n[2] Querying BUY watchlist from Supabase...")
-        date_str = job_date or datetime.now().strftime("%Y-%m-%d")
+        date_str = job_date or _today_wib()
         
         buy_rows = get_buy_watchlist(supa, date_str)
         result["total_buy"] = len(buy_rows)

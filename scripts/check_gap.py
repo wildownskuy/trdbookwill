@@ -8,7 +8,14 @@ import sys
 import os
 import time
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# Timezone WIB (UTC+7) — konsisten dengan jadwal BEI
+WIB = timezone(timedelta(hours=7))
+
+def _today_wib() -> str:
+    """Return tanggal hari ini dalam WIB (Asia/Jakarta), format YYYY-MM-DD."""
+    return datetime.now(tz=WIB).strftime("%Y-%m-%d")
 
 # Pastikan encoding UTF-8 untuk Windows
 if sys.platform.startswith('win'):
@@ -82,7 +89,7 @@ def run_check_gap(job_date: str = None) -> dict:
     
     result = {
         "job": "check-gap",
-        "date": job_date or datetime.utcnow().strftime("%Y-%m-%d"),
+        "date": job_date or _today_wib(),
         "total_pending": 0,
         "total_buy": 0,
         "total_skip": 0,
@@ -114,7 +121,7 @@ def run_check_gap(job_date: str = None) -> dict:
         
         # 2. Query screenings PENDING untuk hari ini
         print("\n[2] Querying pending screenings from Supabase...")
-        date_str = job_date or datetime.utcnow().strftime("%Y-%m-%d")
+        date_str = job_date or _today_wib()
         
         pending_rows = get_pending_watchlist(supa, date_str)
         result["total_pending"] = len(pending_rows)

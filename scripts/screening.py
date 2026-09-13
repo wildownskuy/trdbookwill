@@ -8,7 +8,18 @@ import sys
 import os
 import time
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# Timezone WIB (UTC+7) — konsisten dengan jadwal BEI
+WIB = timezone(timedelta(hours=7))
+
+def _today_wib() -> str:
+    """Return tanggal hari ini dalam WIB (Asia/Jakarta), format YYYY-MM-DD."""
+    return datetime.now(tz=WIB).strftime("%Y-%m-%d")
+
+def _now_wib_iso() -> str:
+    """Return timestamp sekarang dalam WIB, format ISO 8601."""
+    return datetime.now(tz=WIB).isoformat()
 
 # Pastikan encoding UTF-8 untuk Windows
 if sys.platform.startswith('win'):
@@ -78,12 +89,11 @@ def run_screening(job_date: str = None) -> dict:
     Return: dict dengan ringkasan eksekusi
     """
     print(f"\n=== SCREENING JOB START ===")
-    print(f"Date: {job_date or 'Today'}")
-    print(f"Timestamp: {datetime.now().isoformat() if False else 'N/A'}")
-    
+    print(f"Date: {job_date or _today_wib()} | Timestamp: {_now_wib_iso()} WIB")
+
     result = {
         "job": "screening",
-        "date": job_date or datetime.now().strftime("%Y-%m-%d"),
+        "date": job_date or _today_wib(),
         "total_scanned": 0,
         "total_matched_rule1": 0,
         "total_skipped": 0,
@@ -196,7 +206,7 @@ def run_screening(job_date: str = None) -> dict:
                     
                     # e. Upsert ke Supabase dengan entry_decision='PENDING'
                     row = {
-                        "tanggal": features.get('date', job_date or datetime.utcnow().strftime("%Y-%m-%d")),
+                        "tanggal": features.get('date', job_date or _today_wib()),
                         "ticker": ticker,
                         "hari": features.get('day_of_week', ''),
                         "is_friday": bool(features.get('is_friday', False)),

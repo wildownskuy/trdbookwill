@@ -17,21 +17,24 @@ if sys.platform.startswith('win'):
 
 def apply_rule_ml(feats: dict, threshold: float = 0.85) -> tuple:
     """Rule ML — LightGBM Top 30 SHAP (UTAMA)
-    
+
     WR 80.75% validated (5-fold walk-forward, 553 sinyal, 5/5 fold signifikan)
-    
+
     Returns:
         tuple: (is_buy: bool, probability: float)
+        - Jika model tidak tersedia / error → return (False, 0.0)
+          sehingga screening.py dapat mendeteksi kegagalan dan
+          mengaktifkan fallback GA rule dengan label yang benar.
     """
     try:
         from scripts.ml_predictor import predict_naik
         return predict_naik(feats, threshold=threshold)
     except ImportError:
-        print("  [WARN] ml_predictor not available, falling back to GA rule")
-        return apply_rule_ga(feats), 0.0
+        print("  [WARN] ml_predictor not available, will fallback to GA rule")
+        return False, 0.0
     except Exception as e:
-        print(f"  [WARN] ML prediction error: {e}, falling back to GA rule")
-        return apply_rule_ga(feats), 0.0
+        print(f"  [WARN] ML prediction error: {e}, will fallback to GA rule")
+        return False, 0.0
 
 
 def apply_rule_ga(feats: dict) -> bool:
