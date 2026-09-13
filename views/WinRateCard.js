@@ -1,4 +1,4 @@
-﻿// views/WinRateCard.js
+// views/WinRateCard.js
 // Modern Trading Terminal KPI Cards
 import React from "react";
 import { Target, Activity, Zap, BarChart2, ShieldCheck, TrendingUp, TrendingDown, AlertCircle } from "lucide-react";
@@ -25,8 +25,8 @@ export function WinRateCard({ summary, dailyStats, date }) {
 
     const executionRate = hasScreenings ? ((totalBuy / totalRule1) * 100).toFixed(1) : "—";
 
-    // Label tanggal dinamis
-    const todayStr  = new Date().toISOString().split("T")[0];
+    // Label tanggal dinamis — pakai WIB agar konsisten dengan backend
+    const todayStr  = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' })).toLocaleDateString('en-CA');
     const isToday   = !date || date === todayStr;
     const dateLabel = isToday ? "Hari Ini" : date;
 

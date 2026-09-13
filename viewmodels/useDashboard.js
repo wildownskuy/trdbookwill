@@ -27,63 +27,75 @@ export function useDashboard(initialDate = '') {
             setState(prev => ({ ...prev, isRefreshing: true, loading: prev.summary === null }));
 
             try {
-                // 1. Ambil statistik harian dari daily_stats (terbaru)
-                const { data: stats, error: statsError } = await supabase
+                // dateToUse: prioritaskan initialDate (dari date picker user)
+                // Jika initialDate kosong, pakai today WIB - bukan stats.tanggal (bisa kemarin)
+                const todayStr = new Date(
+                    new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' })
+                ).toLocaleDateString('en-CA'); // format YYYY-MM-DD dalam WIB
+                const dateToUse = initialDate || todayStr;
+
+                // 1. Ambil daily_stats untuk tanggal YANG DIPILIH saja
+                const { data: statsForDate, error: statsError } = await supabase
                     .from('daily_stats')
                     .select('*')
+                    .eq('tanggal', dateToUse)
+                    .maybeSingle();
+
+                if (statsError) throw statsError;
+
+                // 2. Ambil cumulative dari row TERBARU (untuk all-time stats)
+                const { data: latestStats } = await supabase
+                    .from('daily_stats')
+                    .select('cum_total_trades, cum_total_wins, cum_profit_sum, win_rate_all_time')
                     .order('tanggal', { ascending: false })
                     .limit(1)
                     .single();
 
-                if (statsError && statsError.code !== 'PGRST116') { // PGRST116 = not found, itu OK
-                    throw statsError;
-                }
-
-                // dateToUse: prioritaskan initialDate (dari date picker user)
-                // Jika initialDate kosong, pakai today - bukan stats.tanggal (bisa kemarin)
-                const todayStr = new Date().toISOString().split('T')[0];
-                const dateToUse = initialDate || todayStr;
-
+                // 3. Ambil screenings untuk tanggal yang dipilih
                 const { data: screenings, error: screeningsError } = await supabase
                     .from('screenings')
                     .select('*')
                     .eq('tanggal', dateToUse)
                     .order('updated_at', { ascending: false });
 
-                if (screeningsError) {
-                    throw screeningsError;
-                }
+                if (screeningsError) throw screeningsError;
 
-                // 3. Hitung summary manual dari screenings yang sudah ada
-                const totalToday = screenings?.length || 0;
-                const winsToday = screenings?.filter(s => s.result === 'WIN').length || 0;
-                const lossesToday = screenings?.filter(s => s.result === 'LOSS').length || 0;
-                const flatsToday = screenings?.filter(s => s.result === 'FLAT').length || 0;
+                // 4. Hitung summary dari screenings tanggal ini
+                const totalToday     = screenings?.length || 0;
+                const winsToday      = screenings?.filter(s => s.result === 'WIN').length || 0;
+                const lossesToday    = screenings?.filter(s => s.result === 'LOSS').length || 0;
+                const flatsToday     = screenings?.filter(s => s.result === 'FLAT').length || 0;
                 const completedTrades = winsToday + lossesToday + flatsToday;
-                const winRateToday = stats?.win_rate_harian !== undefined && stats?.win_rate_harian !== null
-                    ? parseFloat(stats.win_rate_harian)
-                    : (completedTrades > 0 ? (winsToday / completedTrades * 100) : 0);
 
-                // 4. Ambil kumulatif dari stat terbaru
-                const cumTrades = stats?.cum_total_trades || 0;
-                const cumWins = stats?.cum_total_wins || 0;
-                const winRateAllTime = stats?.win_rate_all_time !== undefined && stats?.win_rate_all_time !== null
-                    ? parseFloat(stats.win_rate_all_time)
-                    : (cumTrades > 0 ? (cumWins / cumTrades * 100) : 0);
-                const avgProfitAllTime = cumTrades > 0 ? (stats?.cum_profit_sum || 0) / cumTrades : 0;
+                // win_rate_harian: dari daily_stats tanggal ini, atau hitung manual, atau NULL jika belum ada
+                // PENTING: null jika belum ada data hari ini (bukan pakai data kemarin)
+                const winRateToday = statsForDate?.win_rate_harian != null
+                    ? parseFloat(statsForDate.win_rate_harian)
+                    : (completedTrades > 0 ? (winsToday / completedTrades * 100) : null);
+
+                const avgProfitToday = statsForDate?.avg_profit_harian != null
+                    ? parseFloat(statsForDate.avg_profit_harian)
+                    : null;
+
+                // 5. Kumulatif dari latest stats (seluruh history, bukan hanya hari ini)
+                const cumTrades      = latestStats?.cum_total_trades || 0;
+                const cumWins        = latestStats?.cum_total_wins || 0;
+                const winRateAllTime = latestStats?.win_rate_all_time != null
+                    ? parseFloat(latestStats.win_rate_all_time)
+                    : (cumTrades > 0 ? (cumWins / cumTrades * 100) : null);
 
                 const summary = {
-                    win_rate_harian: winRateToday,
-                    win_rate_all_time: winRateAllTime,
-                    cum_total_trades: cumTrades,
-                    cum_total_wins: cumWins,
-                    avg_profit_harian: parseFloat(stats?.avg_profit_harian || 0),
-                    avg_profit_all_time: parseFloat(avgProfitAllTime),
-                    total_today: totalToday,
-                    total_wins_today: winsToday,
+                    win_rate_harian:    winRateToday,      // null jika belum ada data hari ini
+                    win_rate_all_time:  winRateAllTime,    // null jika belum ada data sama sekali
+                    cum_total_trades:   cumTrades,
+                    cum_total_wins:     cumWins,
+                    avg_profit_harian:  avgProfitToday,    // null jika belum ada data hari ini
+                    total_today:        totalToday,
+                    total_wins_today:   winsToday,
                 };
 
-                const dailyStats = stats || null;
+                // dailyStats: hanya data tanggal yang dipilih (untuk BUY/SKIP/WIN/LOSS count)
+                const dailyStats = statsForDate || null;
                 const screeningsToday = screenings || [];
 
                 if (!cancelled) {
