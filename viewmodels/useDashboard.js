@@ -39,8 +39,10 @@ export function useDashboard(initialDate = '') {
                     throw statsError;
                 }
 
-                // 2. Ambil screenings untuk hari ini
-                const dateToUse = initialDate || stats?.tanggal || new Date().toISOString().split('T')[0];
+                // dateToUse: prioritaskan initialDate (dari date picker user)
+                // Jika initialDate kosong, pakai today - bukan stats.tanggal (bisa kemarin)
+                const todayStr = new Date().toISOString().split('T')[0];
+                const dateToUse = initialDate || todayStr;
 
                 const { data: screenings, error: screeningsError } = await supabase
                     .from('screenings')

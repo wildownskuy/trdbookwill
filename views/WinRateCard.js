@@ -3,7 +3,7 @@
 import React from 'react';
 import { Target, Activity, Zap, BarChart2, ShieldCheck, TrendingUp, TrendingDown } from 'lucide-react';
 
-export function WinRateCard({ summary, dailyStats }) {
+export function WinRateCard({ summary, dailyStats, date }) {
     const winRateHarian = summary?.win_rate_harian;
     const winRateAllTime = summary?.win_rate_all_time;
     const cumTrades = summary?.cum_total_trades;
@@ -19,6 +19,18 @@ export function WinRateCard({ summary, dailyStats }) {
 
     const executionRate = totalRule1 > 0 ? ((totalBuy / totalRule1) * 100).toFixed(1) : '0.0';
 
+    // Label tanggal dinamis
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isToday = !date || date === todayStr;
+    const dateLabel = isToday ? 'Hari Ini' : date;
+
+    // Status kelengkapan data (apakah semua trade sudah dievaluasi)
+    const completionPct = totalBuy > 0 ? Math.round((totalCompleted / totalBuy) * 100) : 0;
+    const isFullyEvaluated = totalBuy > 0 && totalCompleted >= totalBuy;
+    const evalLabel = totalBuy === 0 ? 'Belum Ada Trade'
+        : isFullyEvaluated ? '100% Verified'
+        : `${completionPct}% Evaluated`;
+
     return (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 mb-6">
             {/* 1. Win Rate Harian */}
@@ -30,7 +42,7 @@ export function WinRateCard({ summary, dailyStats }) {
                         Win Rate Sesi 2
                     </span>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        Hari Ini
+                        {dateLabel}
                     </span>
                 </div>
                 
@@ -217,7 +229,7 @@ export function WinRateCard({ summary, dailyStats }) {
 
                 <div className="pt-2 border-t border-[#1E293B]/60 text-[11px] text-slate-400 flex items-center justify-between">
                     <span>Database Record</span>
-                    <span className="text-emerald-400 font-mono">100% Verified</span>
+                    <span className={`font-mono ${isFullyEvaluated ? 'text-emerald-400' : totalBuy === 0 ? 'text-slate-500' : 'text-amber-400'}`}>{evalLabel}</span>
                 </div>
             </div>
         </div>

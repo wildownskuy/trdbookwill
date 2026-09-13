@@ -17,6 +17,26 @@ export default function HomePage() {
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [currentTime, setCurrentTime] = useState('');
   const [activeViewTab, setActiveViewTab] = useState('today'); // 'today' | 'history'
+  const [marketStatus, setMarketStatus] = useState({ isOpen: false, label: 'PASAR TUTUP', phase: '' });
+
+  // Hitung status pasar BEI berdasarkan jam WIB
+  function computeMarketStatus() {
+    const now = new Date();
+    const wib = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+    const day = wib.getDay(); // 0=Sun, 6=Sat
+    const h = wib.getHours();
+    const m = wib.getMinutes();
+    const hm = h * 60 + m;
+    const isFriday = day === 5;
+    const isWeekend = day === 0 || day === 6;
+
+    if (isWeekend) return { isOpen: false, label: 'PASAR TUTUP', phase: 'Libur Akhir Pekan' };
+    if (hm < 9 * 60) return { isOpen: false, label: 'PRA-PASAR', phase: 'Belum Buka' };
+    if (hm < (isFriday ? 11 * 60 + 30 : 12 * 60)) return { isOpen: true, label: 'SESI 1 BUKA', phase: isFriday ? 'Screening 11:30' : 'Screening 12:00' };
+    if (hm < 13 * 60) return { isOpen: false, label: 'JEDA SIANG', phase: isFriday ? 'Check Gap 14:05' : 'Check Gap 13:35' };
+    if (hm < 15 * 60 + 50) return { isOpen: true, label: 'SESI 2 BUKA', phase: 'Evaluasi 15:50' };
+    return { isOpen: false, label: 'PASAR TUTUP', phase: 'Evaluasi Selesai' };
+  }
 
   // Hook untuk data dashboard utama
   const dashboardState = useDashboard(selectedDate);
@@ -32,6 +52,7 @@ export default function HomePage() {
           timeZone: 'Asia/Jakarta',
         }) + ' WIB'
       );
+      setMarketStatus(computeMarketStatus());
     };
     updateClock();
     const timer = setInterval(updateClock, 1000);
@@ -65,8 +86,9 @@ export default function HomePage() {
           {/* Market Status & Clock */}
           <div className="flex items-center gap-4">
             <div className="hidden md:flex items-center gap-2 bg-[#121824] px-3 py-1.5 rounded-xl border border-[#1E293B] text-xs font-mono">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="text-slate-300 font-semibold">HASIL TERVERIFIKASI</span>
+              <span className={`w-2 h-2 rounded-full ${marketStatus.isOpen ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></span>
+              <span className={`font-semibold ${marketStatus.isOpen ? 'text-emerald-300' : 'text-slate-400'}`}>{marketStatus.label}</span>
+              {marketStatus.phase && <span className="text-slate-600 text-[10px]">{marketStatus.phase}</span>}
               <span className="text-slate-600">|</span>
               <Clock className="w-3.5 h-3.5 text-slate-400" />
               <span className="text-emerald-400 font-bold">{currentTime || '00:00:00 WIB'}</span>
@@ -109,29 +131,29 @@ export default function HomePage() {
               </div>
               <div>
                 <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                  Alur Strategi: Genetic Algorithm Rule 1 + Gap Filter
+                  Alur Strategi: LightGBM ML Model (Top 30 SHAP) + Gap Filter
                 </h2>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Top 300 Freq <span className="text-slate-600">&rarr;</span> RSI_S1 &le; 71.43 <span className="text-slate-600">&rarr;</span> Vol Spike &gt; 1.50x <span className="text-slate-600">&rarr;</span> Body_S1 &le; 6.48% <span className="text-slate-600">&rarr;</span> Gap &le; 1.5%
+                  Top 300 Freq <span className="text-slate-600">&rarr;</span> 30 Fitur SHAP <span className="text-slate-600">&rarr;</span> LightGBM predict_proba <span className="text-slate-600">&rarr;</span> proba &ge; 0.85 <span className="text-slate-600">&rarr;</span> Gap &le; 1.5%
                 </p>
               </div>
             </div>
 
-            {/* Stages Badges */}
+            {/* Stages Badges — jam sesuai jadwal BEI (Jum berbeda) */}
             <div className="flex items-center gap-2 text-[11px] font-mono">
               <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-lg">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>1. Screening S1 (11:35)</span>
+                <span>1. Screening S1 (Sen–Kam 12:00 / Jum 11:30)</span>
               </div>
               <ChevronRight className="w-3 h-3 text-slate-600" />
               <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-lg">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>2. Check Gap S2 (13:30)</span>
+                <span>2. Check Gap S2 (Sen–Kam 13:35 / Jum 14:05)</span>
               </div>
               <ChevronRight className="w-3 h-3 text-slate-600" />
               <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-lg">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>3. Evaluasi EOD (16:00)</span>
+                <span>3. Evaluasi EOD (15:50)</span>
               </div>
             </div>
           </div>
@@ -142,6 +164,7 @@ export default function HomePage() {
           <WinRateCard
             summary={dashboardState.summary}
             dailyStats={dashboardState.dailyStats}
+            date={selectedDate}
           />
         </section>
 

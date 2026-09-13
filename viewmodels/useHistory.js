@@ -50,6 +50,9 @@ export function useHistory(date = null) {
                         close_s2: row.close_s2 ?? null,
                         vol_spike_ratio: row.vol_spike_ratio ?? null,
                         bull_candle_ratio: row.bull_candle_ratio ?? null,
+                        // ML Signal
+                        ml_proba: row.ml_proba ?? null,
+                        ml_model: row.ml_model ?? null,
                         // Metadata
                         created_at: row.created_at,
                         updated_at: row.updated_at ?? null,

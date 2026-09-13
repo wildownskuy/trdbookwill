@@ -369,33 +369,36 @@ export function WatchlistToday({ date } = {}) {
               </div>
             </div>
 
-            {/* Rule 1 Checklist */}
+            {/* ML Signal Info */}
             <div className="bg-[#0B0E14] p-4 rounded-xl border border-[#1E293B] mb-5">
-              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-                Validasi Rule 1 (Genetic Algorithm)
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
+                ML Signal (LightGBM Top 30 SHAP)
               </h4>
-              <div className="space-y-1.5 text-xs text-slate-400">
+              <div className="space-y-2 text-xs">
+                {/* ML Proba bar */}
                 <div className="flex items-center justify-between">
-                  <span>RSI Sesi 1 &le; 71.43:</span>
-                  <span className={`font-mono font-semibold ${Number(selectedStock.rsi_s1 || 0) <= 71.43 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {Number(selectedStock.rsi_s1 || 0).toFixed(1)} {Number(selectedStock.rsi_s1 || 0) <= 71.43 ? '✓ Lolos' : '✗ Gagal'}
+                  <span className="text-slate-400">Probabilitas Naik (S2)</span>
+                  <span className={`font-mono font-bold ${selectedStock.ml_proba >= 0.90 ? 'text-emerald-400' : selectedStock.ml_proba >= 0.85 ? 'text-teal-400' : 'text-amber-400'}`}>
+                    {selectedStock.ml_proba != null ? (Number(selectedStock.ml_proba) * 100).toFixed(1) + '%' : 'N/A'}
+                  </span>
+                </div>
+                {selectedStock.ml_proba != null && (
+                  <div className="w-full bg-[#121824] h-2 rounded-full overflow-hidden border border-slate-800">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${Number(selectedStock.ml_proba) >= 0.90 ? 'bg-emerald-400' : Number(selectedStock.ml_proba) >= 0.85 ? 'bg-teal-400' : 'bg-amber-400'}`}
+                      style={{ width: `${Math.min(100, Number(selectedStock.ml_proba) * 100)}%` }}
+                    />
+                  </div>
+                )}
+                <div className="flex items-center justify-between border-t border-[#1E293B] pt-2 mt-1">
+                  <span className="text-slate-400">Model / Threshold</span>
+                  <span className="font-mono text-slate-300">
+                    {selectedStock.ml_model || 'lgb_top30'} / ≥ 0.85
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Volume Spike &gt; 1.50x:</span>
-                  <span className={`font-mono font-semibold ${Number(selectedStock.vol_spike_ratio || 0) > 1.50 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {Number(selectedStock.vol_spike_ratio || 0).toFixed(2)}x {Number(selectedStock.vol_spike_ratio || 0) > 1.50 ? '✓ Lolos' : '✗ Gagal'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Body S1 &le; 6.48%:</span>
-                  <span className={`font-mono font-semibold ${Number(selectedStock.s1_body_pct || 0) <= 6.48 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {Number(selectedStock.s1_body_pct || 0).toFixed(2)}% {Number(selectedStock.s1_body_pct || 0) <= 6.48 ? '✓ Lolos' : '✗ Gagal'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between border-t border-[#1E293B] pt-1.5 mt-1">
-                  <span>Gap Filter Open S2 &le; 1.5%:</span>
+                  <span className="text-slate-400">Gap Filter Open S2 ≤ 1.5%</span>
                   <span className={`font-mono font-semibold ${selectedStock.gap_pct === null ? 'text-blue-400' : Math.abs(Number(selectedStock.gap_pct || 0)) <= 1.5 ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {selectedStock.gap_pct !== null ? `${Number(selectedStock.gap_pct || 0).toFixed(2)}% ${Math.abs(Number(selectedStock.gap_pct || 0)) <= 1.5 ? '✓ Lolos' : '✗ Gagal'}` : 'Belum Dicek'}
                   </span>
