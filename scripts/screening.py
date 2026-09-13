@@ -246,7 +246,8 @@ def run_screening(job_date: str = None) -> dict:
                 else:
                     skip_count += 1
                     result["total_skipped"] += 1
-                    print(f"  No match (ML proba={ml_proba:.4f if ml_proba else 0:.4f} < 0.85)")
+                    proba_display = round(ml_proba, 4) if ml_proba is not None else 0.0
+                    print(f"  No match (ML proba={proba_display:.4f} < 0.85)")
                 
                 # 1 detik delay antar request (rate limit Stockbit)
                 if i < len(universe) - 1:
